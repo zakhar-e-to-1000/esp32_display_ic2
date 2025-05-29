@@ -7,19 +7,42 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C screen(U8G2_R0, U8X8_PIN_NONE);
 SHT2x sht;
 #define BUTTON_PIN_1 12
 #define BUTTON_PIN_2 14
-#define DELAY 250
+#define DELAY 100
 #define CELC true
 #define FAREN false
 #define REAL true
 #define DELUSIONAL false
 int ms_start;
-bool temp_mode = CELC;
-bool hum_mode = DELUSIONAL;
-int prev_button_state_1 = LOW;
-int prev_button_state_2 = LOW;
-bool can_change = false;
-bool change_id = 0;
+bool volatile temp_mode = CELC;
+bool volatile hum_mode = DELUSIONAL;
+bool volatile can_change = false;
+bool volatile change_id = 0;
 bool tick = 0;
+portMUX_TYPE synch_1 = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE synch_2 = portMUX_INITIALIZER_UNLOCKED;
+
+void IRAM_ATTR togle_1() {
+  portENTER_CRITICAL(&synch_1);
+  if (can_change == true) {
+    if (change_id == 0) {
+      temp_mode = !temp_mode;
+    } else if (change_id == 1) {
+      hum_mode = !hum_mode;
+    }
+  }
+  can_change = false;
+  portEXIT_CRITICAL(&synch_1);
+}
+
+void IRAM_ATTR togle_2() {
+  portENTER_CRITICAL(&synch_2);
+  if (can_change) {
+    change_id = (change_id + 1) % 2;
+  }
+  can_change = true;
+  portEXIT_CRITICAL(&synch_2);
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println(__FILE__);
@@ -38,6 +61,8 @@ void setup() {
   pinMode(BUTTON_PIN_1, INPUT_PULLUP);
   pinMode(BUTTON_PIN_2, INPUT_PULLUP);
   ms_start = millis();
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN_1), togle_1, FALLING);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN_2), togle_2, FALLING);
 }
 
 void draw_on_screen() {
@@ -69,26 +94,6 @@ void draw_on_screen() {
 void loop() {
   sht.read();
   int time = millis();
-  int button_state_1 = HIGH - digitalRead(BUTTON_PIN_1);
-  int button_state_2 = HIGH - digitalRead(BUTTON_PIN_2);
-  if (button_state_1 == HIGH && prev_button_state_1 == LOW) {  // press 1
-    if (can_change == true) {
-      if (change_id == 0) {
-        temp_mode = !temp_mode;
-      } else if (change_id == 1) {
-        hum_mode = !hum_mode;
-      }
-    }
-    can_change = false;
-  }
-  if (button_state_2 == HIGH && prev_button_state_2 == LOW) {  // press 2
-    if (can_change) {
-      change_id = (change_id + 1) % 2;
-    }
-    can_change = true;
-  }
-  prev_button_state_1 = button_state_1;
-  prev_button_state_2 = button_state_2;
   if (ms_start + DELAY < time || ms_start > time) {
     ms_start = time;
     tick = (tick + 1) % 2;
