@@ -8,6 +8,7 @@
 #define BUTTON_PIN_1 15
 #define BUTTON_PIN_2 4
 #define DELAY 300
+#define DEBOUNCE_DELAY 50
 #define CELC true
 #define FAREN false
 #define REAL true
@@ -15,19 +16,34 @@
 #define HPascals true
 #define MMHG false
 int ms_start;
-bool volatile temp_mode = CELC;
-bool volatile hum_mode = DELUSIONAL;
-bool volatile pressure_mod = HPascals;
-bool volatile can_change = false;
-int volatile change_id = 0;
+
+bool prev_state_1 = false;
+bool prev_state_2 = false;
+
+unsigned long last_debounce_1 = 0;
+unsigned long last_debounce_2 = 0;
+
+bool temp_mode = CELC;
+bool hum_mode = DELUSIONAL;
+bool pressure_mod = HPascals;
+bool can_change = false;
+int change_id = 0;
 bool tick = 0;
-portMUX_TYPE synch_1 = portMUX_INITIALIZER_UNLOCKED;
-portMUX_TYPE synch_2 = portMUX_INITIALIZER_UNLOCKED;
 U8G2_SH1106_128X64_NONAME_F_HW_I2C screen(U8G2_R0, U8X8_PIN_NONE);
 SHT2x sht;
 Adafruit_BMP280 bmp;
-void IRAM_ATTR togle_1() {
-  portENTER_CRITICAL(&synch_1);
+
+void process_button_1() {
+  unsigned long reading = millis();
+  bool state_1 = digitalRead(BUTTON_PIN_1) == LOW;
+  if (state_1 == prev_state_1 || (reading - last_debounce_1) < DEBOUNCE_DELAY) {
+    return;
+  }
+  prev_state_1 = state_1;
+  last_debounce_1 = reading;
+  if (state_1 == false) {
+    return;
+  }
   if (can_change == true) {
     if (change_id == 0) {
       temp_mode = !temp_mode;
@@ -38,29 +54,29 @@ void IRAM_ATTR togle_1() {
     }
   }
   can_change = false;
-  portEXIT_CRITICAL(&synch_1);
 }
 
-void IRAM_ATTR togle_2() {
-  portENTER_CRITICAL(&synch_2);
+void process_button_2() {
+  unsigned long reading = millis();
+  bool state_2 = digitalRead(BUTTON_PIN_2) == LOW;
+  if (state_2 == prev_state_2 || (reading - last_debounce_2) < DEBOUNCE_DELAY) {
+    return;
+  }
+  prev_state_2 = state_2;
+  last_debounce_2 = reading;
+  if (state_2 == false) {
+    return;
+  }
   if (can_change) {
     change_id = (change_id + 1) % 3;
   }
   can_change = true;
-  portEXIT_CRITICAL(&synch_2);
 }
 
 void setup() {
   Serial.begin(115200);
-  Serial.println(__FILE__);
-  Serial.print("SHT2x_LIB_VERSION: \t");
-  Serial.println(SHT2x_LIB_VERSION);
-
   Wire.begin();
   sht.begin();
-  uint8_t stat = sht.getStatus();
-  Serial.print(stat, HEX);
-  Serial.println();
   screen.begin();
   screen.clearBuffer();
   screen.setFont(u8g2_font_ncenB08_tr);
@@ -75,8 +91,6 @@ void setup() {
   pinMode(BUTTON_PIN_1, INPUT_PULLUP);
   pinMode(BUTTON_PIN_2, INPUT_PULLUP);
   ms_start = millis();
-  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN_1), togle_1, FALLING);
-  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN_2), togle_2, FALLING);
 }
 
 void draw_on_screen() {
@@ -91,18 +105,15 @@ void draw_on_screen() {
     sprintf(buffer_temp, "TEMP: %.2f *F", fahrenheit(temp));
   }
   if (hum_mode == REAL) {
-    sprintf(buffer_hum, "HUM: %.2f%%", hum);
-  } else {
     sprintf(buffer_hum, "HUM: %.2fg/m^3", absolute_humidity(hum / 100, temp));
+  } else {
+    sprintf(buffer_hum, "HUM: %.2f%%", hum);
   }
   if (pressure_mod == HPascals) {
     sprintf(buffer_pressure, "PRESS: %.2fhPa", pressure / 100);
   } else {
     sprintf(buffer_pressure, "PRESS: %.2f mm. Hg", mm_hg(pressure));
   }
-  Serial.println(buffer_temp);
-  Serial.println(buffer_hum);
-  Serial.println(digitalRead(BUTTON_PIN_1));
   screen.clearBuffer();
   if (tick == 1 || !can_change || change_id != 0) {
     screen.drawStr(0, 10, buffer_temp);
@@ -116,6 +127,8 @@ void draw_on_screen() {
   screen.sendBuffer();
 }
 void loop() {
+  process_button_1();
+  process_button_2();
   int time = millis();
   if (ms_start + DELAY < time || ms_start > time) {
     ms_start = time;
