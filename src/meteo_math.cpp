@@ -23,3 +23,5 @@ float max_density(float t_c) {
 }
 
 float absolute_humidity(float rel, float t_c) { return rel * max_density(t_c); }
+
+float mm_hg(float pa) { return pa / 133; }
