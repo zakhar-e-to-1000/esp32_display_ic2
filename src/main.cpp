@@ -1,9 +1,13 @@
 #include <Adafruit_BMP280.h>
+#include <NTPClient.h>
 #include <U8g2lib.h>
+#include <WiFi.h>
+#include <WifiUdp.h>
 
 #include "SHT2x.h"
 #include "Wire.h"
 #include "meteo_math.h"
+#include "secrets.h"
 
 #define BUTTON_PIN_1 15
 #define BUTTON_PIN_2 4
@@ -32,6 +36,12 @@ bool tick = 0;
 U8G2_SH1106_128X64_NONAME_F_HW_I2C screen(U8G2_R0, U8X8_PIN_NONE);
 SHT2x sht;
 Adafruit_BMP280 bmp;
+
+const char *ssid = SSID;
+const char *password = PASSWORD;
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "ua.pool.ntp.org", 3 * 3600);
 
 void process_button_1() {
   unsigned long reading = millis();
@@ -90,15 +100,22 @@ void setup() {
                   Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
   pinMode(BUTTON_PIN_1, INPUT_PULLUP);
   pinMode(BUTTON_PIN_2, INPUT_PULLUP);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  timeClient.begin();
   ms_start = millis();
 }
 
 void draw_on_screen() {
+  bool is_ok = timeClient.update();
   sht.read();
   float temp = sht.getTemperature();
   float hum = sht.getHumidity();
   float pressure = bmp.readPressure();
-  char buffer_temp[30], buffer_hum[30], buffer_pressure[30];
+  char buffer_temp[30], buffer_hum[30], buffer_pressure[30], buffer_time[30];
   if (temp_mode == CELC) {
     sprintf(buffer_temp, "TEMP: %.2f *C", temp);
   } else {
@@ -114,15 +131,18 @@ void draw_on_screen() {
   } else {
     sprintf(buffer_pressure, "PRESS: %.2f mm. Hg", mm_hg(pressure));
   }
+  sprintf(buffer_time, "%02d:%02d", timeClient.getHours(),
+          timeClient.getMinutes());
   screen.clearBuffer();
+  screen.drawStr(0, 10, buffer_time);
   if (tick == 1 || !can_change || change_id != 0) {
-    screen.drawStr(0, 10, buffer_temp);
+    screen.drawStr(0, 20, buffer_temp);
   }
   if (tick == 1 || !can_change || change_id != 1) {
     screen.drawStr(0, 30, buffer_hum);
   }
   if (tick == 1 || !can_change || change_id != 2) {
-    screen.drawStr(0, 50, buffer_pressure);
+    screen.drawStr(0, 40, buffer_pressure);
   }
   screen.sendBuffer();
 }

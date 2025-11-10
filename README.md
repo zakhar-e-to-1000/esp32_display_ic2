@@ -1,0 +1,2 @@
+# ESP32 Indoor Weather Station
+This project is ESP32 Indoor Weather Station made with ESP32 module connected to temperature sensor and  tiny OLED-display via I2C protocol. And uses wireless WIFI-protocol for getting current time.
